@@ -1,0 +1,9 @@
+{
+  "name": "incidentx-sandbox",
+  "version": "1.0.0",
+  "description": "Secure Node.js sandbox environment for IncidentX",
+  "main": "runner.js",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

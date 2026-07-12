@@ -1,0 +1,19 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Java / Maven (per-module .gitignore also covers incidentx-api)
+target/
+*.class
+
+# Node (per-module .gitignore also covers incidentx-web)
+node_modules/
+sandbox/node_modules/
+
+# Env files
+.env
+.env.local
