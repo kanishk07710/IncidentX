@@ -24,6 +24,7 @@ const categoryIcons: Record<string, string> = {
   security: "🔒",
   stability: "🛡️",
   database: "🗄️",
+  concurrency: "🔀",
 };
 
 export default function DashboardPage() {

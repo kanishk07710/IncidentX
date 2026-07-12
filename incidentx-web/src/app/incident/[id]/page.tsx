@@ -46,6 +46,7 @@ export default function IncidentWorkspace({
   const [loading, setLoading] = useState(true);
   const [hint, setHint] = useState<HintResponse | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
+  const [hintError, setHintError] = useState<string | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -119,14 +120,21 @@ export default function IncidentWorkspace({
   async function handleGetHint() {
     if (hint || hintLoading) return;
     setHintLoading(true);
+    setHintError(null);
     try {
       const res = await apiFetch(`/api/incidents/${id}/hint`, { method: "POST" });
+      if (res.status === 401) {
+        router.push("/");
+        return;
+      }
       if (res.ok) {
         const data: HintResponse = await res.json();
         setHint(data);
+      } else {
+        setHintError("Couldn't fetch a hint right now — try again in a moment.");
       }
     } catch {
-      // ignore — hint is a nice-to-have, not the grading path
+      setHintError("Couldn't reach the server for a hint.");
     } finally {
       setHintLoading(false);
     }
@@ -257,9 +265,16 @@ export default function IncidentWorkspace({
 
             <div className={styles.panelContent}>
               {hint && (
-                <div className={styles.hintBanner}>
+                <div className={`${styles.hintBanner} animate-in`}>
                   <span className={styles.hintIcon}>💡</span>
                   <span>{hint.hint}</span>
+                </div>
+              )}
+
+              {hintError && (
+                <div className={`${styles.hintBanner} ${styles.hintBannerError} animate-in`}>
+                  <span className={styles.hintIcon}>⚠️</span>
+                  <span>{hintError}</span>
                 </div>
               )}
 
@@ -396,7 +411,7 @@ export default function IncidentWorkspace({
 
               {/* Individual test results */}
               {tests.length > 0 && (
-                <div className={styles.testResults}>
+                <div className={`${styles.testResults} stagger`}>
                   {tests.map((t, i) => (
                     <div
                       key={i}
