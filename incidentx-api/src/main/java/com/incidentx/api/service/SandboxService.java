@@ -22,13 +22,13 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class SandboxService {
 
-    @Value("${incidentx.sandbox.temp-dir:C:/Users/Kanishk/AppData/Local/Temp/incidentx}")
+    @Value("${incidentx.sandbox.temp-dir:${java.io.tmpdir}/incidentx}")
     private String baseTempDir;
 
     @Value("${incidentx.sandbox.image-name:incidentx-sandbox-node}")
     private String dockerImageName;
 
-    @Value("${incidentx.sandbox.timeout-seconds:4}")
+    @Value("${incidentx.sandbox.timeout-seconds:8}")
     private int timeoutSeconds;
 
     @Data

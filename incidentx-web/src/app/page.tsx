@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, API_BASE } from "@/lib/api";
 import styles from "./page.module.css";
 
 export default function LoginPage() {
@@ -102,7 +102,7 @@ export default function LoginPage() {
 
           <div className={styles.oauthButtons}>
             <a
-              href="http://localhost:8080/oauth2/authorization/github"
+              href={`${API_BASE}/oauth2/authorization/github`}
               className={`btn btn-secondary ${styles.oauthBtn}`}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -111,7 +111,7 @@ export default function LoginPage() {
               GitHub
             </a>
             <a
-              href="http://localhost:8080/oauth2/authorization/google"
+              href={`${API_BASE}/oauth2/authorization/google`}
               className={`btn btn-secondary ${styles.oauthBtn}`}
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
