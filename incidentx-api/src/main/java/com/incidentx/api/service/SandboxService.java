@@ -31,6 +31,14 @@ public class SandboxService {
     @Value("${incidentx.sandbox.timeout-seconds:8}")
     private int timeoutSeconds;
 
+    // "docker" (default, used for local dev with docker-compose) or "node" — Render's standard
+    // web service has no Docker daemon available to it, so on Render set SANDBOX_MODE=node to
+    // run the same runner.js directly via the Node binary baked into the API's own Docker image
+    // instead of shelling out to `docker run`. Isolation is weaker in "node" mode (process-level
+    // limits only, no container), which is an acceptable tradeoff for this project's threat model.
+    @Value("${incidentx.sandbox.mode:docker}")
+    private String sandboxMode;
+
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
@@ -61,11 +69,73 @@ public class SandboxService {
             // Write hidden test suite to tests.js
             Files.writeString(submissionTempPath.resolve("tests.js"), hiddenTests, StandardCharsets.UTF_8);
 
+            if ("node".equalsIgnoreCase(sandboxMode)) {
+                return runWithNode(submissionTempPath);
+            }
+            return runWithDocker(submissionId, submissionTempPath);
+
+        } catch (IOException e) {
+            log.error("Failed to run submission in sandbox", e);
+            return new SandboxResult("ERROR", "{\"error\": \"Internal execution error: " + e.getMessage() + "\"}", "", "");
+        } finally {
+            deleteDirectory(submissionTempPath.toFile());
+        }
+    }
+
+    private SandboxResult runWithNode(Path submissionTempPath) throws IOException {
+        try {
+            Path runnerScript = submissionTempPath.resolve("runner.js");
+            try (var in = getClass().getResourceAsStream("/sandbox/runner.js")) {
+                if (in == null) {
+                    throw new IOException("Bundled sandbox/runner.js resource not found on classpath");
+                }
+                Files.copy(in, runnerScript, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            List<String> command = List.of("node", "runner.js");
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.directory(submissionTempPath.toFile());
+            pb.environment().put("SUBMISSION_DIR", submissionTempPath.toAbsolutePath().toString());
+
+            Process process = pb.start();
+
+            byte[] stdoutBytes;
+            byte[] stderrBytes;
+            try (var stdoutStream = process.getInputStream();
+                 var stderrStream = process.getErrorStream()) {
+
+                boolean finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+                if (!finished) {
+                    log.warn("Submission timed out in node sandbox. Force killing process.");
+                    process.destroyForcibly();
+                    return new SandboxResult("TIMEOUT", "{\"error\": \"Execution timed out after " + timeoutSeconds + " seconds.\"}", "", "TIMEOUT");
+                }
+
+                stdoutBytes = stdoutStream.readAllBytes();
+                stderrBytes = stderrStream.readAllBytes();
+            }
+
+            String stdout = new String(stdoutBytes, StandardCharsets.UTF_8);
+            String stderr = new String(stderrBytes, StandardCharsets.UTF_8);
+            log.info("Sandbox stdout:\n{}", stdout);
+            if (!stderr.isEmpty()) {
+                log.warn("Sandbox stderr:\n{}", stderr);
+            }
+
+            return buildResultFromStdout(stdout, stderr);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new SandboxResult("ERROR", "{\"error\": \"Internal execution error: " + e.getMessage() + "\"}", "", "");
+        }
+    }
+
+    private SandboxResult runWithDocker(String submissionId, Path submissionTempPath) throws IOException {
+        try {
             // Path to mount, mapped properly for Docker Desktop
             String hostPath = submissionTempPath.toAbsolutePath().toString().replace("\\", "/");
 
             // Build docker command
-            String containerName = "incidentx-sub-" + uniqueId;
+            String containerName = "incidentx-sub-" + UUID.randomUUID();
             List<String> command = new ArrayList<>(List.of(
                 "docker", "run", "--rm",
                 "--name", containerName,
@@ -118,32 +188,31 @@ public class SandboxService {
                 log.warn("Sandbox stderr:\n{}", stderr);
             }
 
-            // Extract the result JSON from stdout
-            String resultsJson = extractJsonResult(stdout);
-            String status = "ERROR";
-            if (resultsJson != null) {
-                // Determine status based on parsed JSON output
-                if (resultsJson.contains("\"status\": \"PASSED\"")) {
-                    status = "PASSED";
-                } else if (resultsJson.contains("\"status\": \"FAILED\"")) {
-                    status = "FAILED";
-                } else if (resultsJson.contains("\"status\": \"ERROR\"")) {
-                    status = "ERROR";
-                }
-            } else {
-                resultsJson = "{\"error\": \"Failed to parse sandbox test runner output.\"}";
-            }
-
-            return new SandboxResult(status, resultsJson, stdout, stderr);
-
-        } catch (IOException | InterruptedException e) {
-            log.error("Failed to run submission in sandbox", e);
+            return buildResultFromStdout(stdout, stderr);
+        } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return new SandboxResult("ERROR", "{\"error\": \"Internal execution error: " + e.getMessage() + "\"}", "", "");
-        } finally {
-            // Clean up files
-            deleteDirectory(submissionTempPath.toFile());
         }
+    }
+
+    private SandboxResult buildResultFromStdout(String stdout, String stderr) {
+        // Extract the result JSON from stdout
+        String resultsJson = extractJsonResult(stdout);
+        String status = "ERROR";
+        if (resultsJson != null) {
+            // Determine status based on parsed JSON output
+            if (resultsJson.contains("\"status\": \"PASSED\"")) {
+                status = "PASSED";
+            } else if (resultsJson.contains("\"status\": \"FAILED\"")) {
+                status = "FAILED";
+            } else if (resultsJson.contains("\"status\": \"ERROR\"")) {
+                status = "ERROR";
+            }
+        } else {
+            resultsJson = "{\"error\": \"Failed to parse sandbox test runner output.\"}";
+        }
+
+        return new SandboxResult(status, resultsJson, stdout, stderr);
     }
 
     private String extractJsonResult(String stdout) {
