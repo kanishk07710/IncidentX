@@ -1,0 +1,49 @@
+databases:
+  - name: incidentx-db
+    plan: free
+    databaseName: incidentx
+    user: incidentx
+
+services:
+  - type: web
+    name: incidentx-api
+    runtime: docker
+    dockerfilePath: ./incidentx-api/Dockerfile
+    dockerContext: ./incidentx-api
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      # Render's database gives you a postgres://user:pass@host/db URI, but Spring needs JDBC
+      # format. After the DB is created, set these three manually in the Render dashboard using
+      # values from the incidentx-db "Connect" tab:
+      #   DATABASE_URL      = jdbc:postgresql://<host>/<database>
+      #   DATABASE_USERNAME = <user>
+      #   DATABASE_PASSWORD = <password>
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_USERNAME
+        sync: false
+      - key: DATABASE_PASSWORD
+        sync: false
+      - key: SANDBOX_MODE
+        value: node
+      - key: SESSION_COOKIE_SAME_SITE
+        value: None
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      # Set these two manually in the Render dashboard once you know your Vercel URL:
+      - key: FRONTEND_URL
+        sync: false
+      - key: CORS_ALLOWED_ORIGINS
+        sync: false
+      # Optional — leave unset to use mock AI feedback / mock login:
+      - key: AI_API_KEY
+        sync: false
+      - key: GITHUB_CLIENT_ID
+        sync: false
+      - key: GITHUB_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
