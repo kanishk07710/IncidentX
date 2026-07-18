@@ -21,9 +21,9 @@ grading path; passing is decided by hidden tests, full stop.
 ## Project layout
 
 ```
-incidentx-api/   Spring Boot 3 (Java 21) backend — auth, incidents, grading, AI mentor
-incidentx-web/   Next.js frontend
-sandbox/         Docker image the backend spins up per submission (Node.js test runner)
+backend/   Spring Boot 3 (Java 21) backend — auth, incidents, grading, AI mentor
+frontend/   Next.js frontend
+backend/sandbox/         Docker image the backend spins up per submission (Node.js test runner)
 docker-compose.yml   Local Postgres
 ```
 
@@ -36,14 +36,14 @@ Prerequisites: Java 21, Node 20+, Docker Desktop.
 docker compose up -d
 
 # 2. Sandbox image (the backend calls `docker run` against this per submission)
-docker build -t incidentx-sandbox-node ./sandbox
+docker build -t incidentx-sandbox-node ./backend/sandbox
 
 # 3. Backend — http://localhost:8080
-cd incidentx-api
+cd backend
 ./mvnw spring-boot:run
 
 # 4. Frontend — http://localhost:3000
-cd incidentx-web
+cd frontend
 npm install
 npm run dev
 ```
@@ -63,8 +63,4 @@ Vercel can only host the frontend — the backend needs Docker access for the sa
 lives on a separate host. See [DEPLOYMENT.md](DEPLOYMENT.md) for the full two-host setup and
 required environment variables.
 
-## Docs
 
-- [project (1).md](project%20(1).md) — canonical spec and phased build checklist
-- [IncidentX_PRD (1).md](IncidentX_PRD%20(1).md) — product requirements
-- [IncidentX_Build_Plan (1).md](IncidentX_Build_Plan%20(1).md) — build plan and sequencing

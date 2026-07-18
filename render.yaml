@@ -8,8 +8,8 @@ services:
   - type: web
     name: incidentx-api
     runtime: docker
-    dockerfilePath: ./incidentx-api/Dockerfile
-    dockerContext: ./incidentx-api
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
     plan: free
     healthCheckPath: /health
     envVars:

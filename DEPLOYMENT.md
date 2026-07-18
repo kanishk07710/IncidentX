@@ -2,7 +2,7 @@
 
 ## The constraint that shapes everything
 
-**Vercel can only host `incidentx-web` (the Next.js frontend).** It cannot run `incidentx-api`
+**Vercel can only host `frontend` (the Next.js frontend).** It cannot run `backend`
 (Spring Boot) or the Docker-based sandbox — Vercel functions are short-lived and serverless,
 with no Docker-in-Docker access and no support for a persistent JVM process. `SandboxService`
 shells out to `docker run` for every submission by default, so it needs either a host with a
@@ -12,18 +12,18 @@ real Docker daemon, or `SANDBOX_MODE=node` (see below) to skip Docker entirely.
 to your app container either**, so `docker run` won't work there out of the box. To make this
 work on Render, `SandboxService` now supports a `SANDBOX_MODE=node` fallback: instead of
 spawning `docker run`, it runs the same `runner.js` directly with the Node binary that's baked
-into the API's own Docker image (see `incidentx-api/Dockerfile`). Isolation is weaker than the
+into the API's own Docker image (see `backend/Dockerfile`). Isolation is weaker than the
 Docker path (process-level limits only, no container) — acceptable for a project like this, but
 worth knowing. `render.yaml` in the repo root sets `SANDBOX_MODE=node` automatically. If you'd
-rather keep full container isolation, deploy `incidentx-api` to a host that gives you a real
+rather keep full container isolation, deploy `backend` to a host that gives you a real
 Docker daemon (Fly.io Machines or a VPS) and leave `SANDBOX_MODE` unset/`docker`.
 
 So this is a two-host deployment:
 
 | Piece | Host | Why |
 |---|---|---|
-| `incidentx-web` | Vercel | Standard Next.js app, zero-config |
-| `incidentx-api` + Postgres + sandbox | Railway, Render, Fly.io, or a VPS | Needs a long-running JVM process and Docker access |
+| `frontend` | Vercel | Standard Next.js app, zero-config |
+| `backend` + Postgres + sandbox | Railway, Render, Fly.io, or a VPS | Needs a long-running JVM process and Docker access |
 
 Pick a backend host that explicitly gives your app access to a Docker daemon (Fly.io Machines
 or a plain VPS with Docker installed are the most reliable; confirm before committing if using
@@ -38,10 +38,10 @@ You need the backend's public URL before the frontend can be configured, so do t
 
 1. Push this repo to GitHub.
 2. In Render: New → Blueprint → pick the repo. Render reads `render.yaml` at the repo root and
-   creates a free Postgres instance (`incidentx-db`) plus a Docker web service (`incidentx-api`,
-   built from `incidentx-api/Dockerfile`).
+   creates a free Postgres instance (`incidentx-db`) plus a Docker web service (`backend`,
+   built from `backend/Dockerfile`).
 3. Once the Postgres instance is up, open its "Connect" tab and copy the host/database/user/
-   password, then set on the `incidentx-api` service (Environment tab):
+   password, then set on the `backend` service (Environment tab):
 
    | Variable | Value |
    |---|---|
@@ -58,7 +58,7 @@ You need the backend's public URL before the frontend can be configured, so do t
 
 1. Provision a Render Postgres instance.
 2. New → Web Service → pick the repo → Runtime: **Docker** → Dockerfile Path:
-   `incidentx-api/Dockerfile` → Docker Build Context: `incidentx-api`.
+   `backend/Dockerfile` → Docker Build Context: `backend`.
 3. Set the same environment variables as the table above, plus `SANDBOX_MODE=node`,
    `SESSION_COOKIE_SAME_SITE=None`, `SESSION_COOKIE_SECURE=true`.
 4. Optional: `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` and `GOOGLE_CLIENT_ID`/
@@ -72,17 +72,17 @@ Either way, confirm it's up once deployed: `curl https://your-backend.onrender.c
 ## 2. Deploy the frontend to Vercel
 
 1. Import the GitHub repo into Vercel.
-2. **Set the project's Root Directory to `incidentx-web`** (Project Settings → General →
+2. **Set the project's Root Directory to `frontend`** (Project Settings → General →
    Root Directory) — this is a monorepo, Vercel needs to know which folder is the actual
    Next.js app. No `vercel.json` is needed; the standard Next.js zero-config build handles it.
-3. Set the environment variable (see `incidentx-web/.env.example`):
+3. Set the environment variable (see `frontend/.env.example`):
 
    | Variable | Value |
    |---|---|
    | `NEXT_PUBLIC_API_URL` | `https://your-backend.onrender.com` (no trailing slash) |
 
-4. Deploy. Vercel runs `npm run build` in `incidentx-web` automatically.
-5. Go back to Render and update `FRONTEND_URL` / `CORS_ALLOWED_ORIGINS` on `incidentx-api` to
+4. Deploy. Vercel runs `npm run build` in `frontend` automatically.
+5. Go back to Render and update `FRONTEND_URL` / `CORS_ALLOWED_ORIGINS` on `backend` to
    your real Vercel URL, then redeploy the backend so CORS/OAuth picks it up.
 
 ## 3. If OAuth login (GitHub/Google) is wired up
@@ -98,3 +98,4 @@ it's what the "Launch Practice Mode" button on the login page uses, no OAuth cre
 All of the above are env vars with defaults that match the existing local setup
 (`docker-compose.yml` + `localhost:3000` + `localhost:8080` + `SameSite=Lax`), so nothing
 changes for `npm run dev` / `./mvnw spring-boot:run` locally.
+
