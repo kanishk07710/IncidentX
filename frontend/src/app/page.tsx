@@ -1,84 +1,268 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, API_BASE } from "@/lib/api";
 import styles from "./page.module.css";
 
+const DEMO_HANDLE = "debug_master_42";
+const STORAGE_KEY = "incidentx_last_handle";
+
 export default function LoginPage() {
   const [username, setUsername] = useState("");
+  const [securityKey, setSecurityKey] = useState("");
+  const [showKey, setShowKey] = useState(false);
+  const [keyFocused, setKeyFocused] = useState(false);
+  const [keyHovered, setKeyHovered] = useState(false);
+  const [capsLockOn, setCapsLockOn] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [shake, setShake] = useState(false);
   const router = useRouter();
+
+  // Prefill last-used handle, and silently redirect if a session already exists.
+  useEffect(() => {
+    let cancelled = false;
+
+    async function init() {
+      const saved = window.localStorage.getItem(STORAGE_KEY);
+      if (saved && !cancelled) setUsername(saved);
+
+      try {
+        const res = await apiFetch("/api/auth/me");
+        if (res.ok && !cancelled) router.replace("/dashboard");
+      } catch {
+        // backend unreachable or not logged in — stay on the login screen
+      }
+    }
+
+    init();
+    return () => {
+      cancelled = true;
+    };
+  }, [router]);
+
+  function triggerShake() {
+    setShake(true);
+    setTimeout(() => setShake(false), 400);
+  }
+
+  function fillDemoHandle() {
+    setUsername(DEMO_HANDLE);
+    setError("");
+  }
+
+  function trackCapsLock(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.getModifierState) setCapsLockOn(e.getModifierState("CapsLock"));
+  }
 
   async function handleMockLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (!username.trim()) return;
+    const handle = username.trim();
+
+    if (!handle) {
+      setError("Enter a developer handle to continue.");
+      triggerShake();
+      return;
+    }
+    if (handle.length < 2) {
+      setError("Handle must be at least 2 characters.");
+      triggerShake();
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     try {
       const res = await apiFetch("/api/auth/mock-login", {
         method: "POST",
-        body: JSON.stringify({ username: username.trim() }),
+        body: JSON.stringify({ username: handle }),
       });
 
       if (res.ok) {
+        if (remember) {
+          window.localStorage.setItem(STORAGE_KEY, handle);
+        } else {
+          window.localStorage.removeItem(STORAGE_KEY);
+        }
         router.push("/dashboard");
       } else {
         setError("Login failed. Please try again.");
+        triggerShake();
       }
     } catch {
       setError("Could not connect to the server.");
+      triggerShake();
     } finally {
       setLoading(false);
     }
   }
 
+  const showPeek = (keyHovered || keyFocused) && securityKey.length > 0 && !showKey;
+
   return (
-    <main className={styles.main}>
-      {/* Background orbs */}
-      <div className={styles.orb1} />
-      <div className={styles.orb2} />
-      <div className={styles.orb3} />
+    <main className={styles.shell}>
+      {/* Left — brand / visual panel */}
+      <section className={styles.visualPanel}>
+        <div className={styles.orbA} />
+        <div className={styles.orbB} />
+        <div className={styles.orbC} />
+        <div className={styles.starfield} />
 
-      <div className={styles.content}>
-        {/* Logo and hero */}
-        <div className={styles.hero}>
-          <div className={styles.logoMark}>
-            <span className={styles.logoIcon}>⚡</span>
+        <div className={styles.visualContent}>
+          <div className={styles.brandRow}>
+            <span className={styles.logoMark}>⚡</span>
+            <span className={styles.brandName}>
+              Incident<span className={styles.brandAccent}>X</span>
+            </span>
           </div>
-          <h1 className={styles.title}>
-            Incident<span className={styles.titleAccent}>X</span>
+
+          <h1 className={styles.headline}>
+            Debug. Compete.
+            <br />
+            Prove It.
           </h1>
-          <p className={styles.subtitle}>Debug. Compete. Prove It.</p>
-          <p className={styles.description}>
+          <p className={styles.subHeadline}>
             Diagnose and fix realistic production incidents inside isolated
-            sandboxes. Graded deterministically. No AI in the scoring path.
+            Docker sandboxes. Graded deterministically. No AI in the scoring
+            path.
           </p>
+
+          <ul className={styles.featureList}>
+            <li>
+              <span className={styles.featureIcon}>🔒</span> Docker Sandboxed
+            </li>
+            <li>
+              <span className={styles.featureIcon}>🧪</span> Deterministic
+              Grading
+            </li>
+            <li>
+              <span className={styles.featureIcon}>🤖</span> AI Mentor
+            </li>
+            <li>
+              <span className={styles.featureIcon}>📊</span> ELO Rating
+            </li>
+          </ul>
+
+          <div className={styles.statusRow}>
+            <span className={styles.statusDot} />
+            Systems Online
+          </div>
         </div>
+      </section>
 
-        {/* Login card */}
-        <div className={`glass-card ${styles.loginCard}`}>
+      {/* Right — login form panel */}
+      <section className={styles.formPanel}>
+        <div
+          className={`glass-card ${styles.loginCard} ${shake ? styles.shake : ""}`}
+        >
           <h2 className={styles.cardTitle}>Enter the Arena</h2>
+          <p className={styles.cardSubtitle}>Sign in to start debugging</p>
 
-          <form onSubmit={handleMockLogin} className={styles.form}>
+          <div className={styles.demoHint}>
+            <span className={styles.demoHintIcon}>🎮</span>
+            <div className={styles.demoHintText}>
+              <strong>Practice Mode</strong> — no password required, any
+              handle works.
+            </div>
+            <button
+              type="button"
+              className={styles.demoHintBtn}
+              onClick={fillDemoHandle}
+            >
+              Try &ldquo;{DEMO_HANDLE}&rdquo;
+            </button>
+          </div>
+
+          <form onSubmit={handleMockLogin} className={styles.form} noValidate>
             <div className={styles.inputGroup}>
               <label htmlFor="username" className={styles.label}>
                 Developer Handle
               </label>
-              <input
-                id="username"
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="e.g. debug_master_42"
-                className={styles.input}
-                autoFocus
-                autoComplete="off"
-              />
+              <div className={styles.inputWrap}>
+                <span className={styles.inputIcon}>👤</span>
+                <input
+                  id="username"
+                  type="text"
+                  value={username}
+                  onChange={(e) => {
+                    setUsername(e.target.value);
+                    setError("");
+                  }}
+                  placeholder="e.g. debug_master_42"
+                  className={styles.input}
+                  autoFocus
+                  autoComplete="username"
+                  maxLength={32}
+                />
+              </div>
             </div>
 
-            {error && <p className={styles.error}>{error}</p>}
+            <div className={styles.inputGroup}>
+              <div className={styles.labelRow}>
+                <label htmlFor="securityKey" className={styles.label}>
+                  Security Key
+                </label>
+                <span className={styles.optionalTag}>
+                  optional · practice mode
+                </span>
+              </div>
+              <div
+                className={styles.inputWrap}
+                onMouseEnter={() => setKeyHovered(true)}
+                onMouseLeave={() => setKeyHovered(false)}
+              >
+                <span className={styles.inputIcon}>🔒</span>
+                <input
+                  id="securityKey"
+                  type={showKey ? "text" : "password"}
+                  value={securityKey}
+                  onChange={(e) => setSecurityKey(e.target.value)}
+                  onFocus={() => setKeyFocused(true)}
+                  onBlur={() => setKeyFocused(false)}
+                  onKeyDown={trackCapsLock}
+                  onKeyUp={trackCapsLock}
+                  placeholder="not required for practice mode"
+                  className={styles.input}
+                  autoComplete="off"
+                />
+                <button
+                  type="button"
+                  className={styles.eyeBtn}
+                  onClick={() => setShowKey((s) => !s)}
+                  aria-label={showKey ? "Hide security key" : "Show security key"}
+                  aria-pressed={showKey}
+                  tabIndex={-1}
+                >
+                  {showKey ? "🙈" : "👁️"}
+                </button>
+
+                {showPeek && (
+                  <div className={styles.peekTooltip} aria-hidden="true">
+                    {securityKey}
+                  </div>
+                )}
+              </div>
+              {capsLockOn && keyFocused && (
+                <p className={styles.capsWarning}>⚠ Caps Lock is on</p>
+              )}
+            </div>
+
+            <label className={styles.rememberRow}>
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+              />
+              Remember my handle on this device
+            </label>
+
+            {error && (
+              <p className={styles.error} role="alert">
+                {error}
+              </p>
+            )}
 
             <button
               type="submit"
@@ -123,24 +307,13 @@ export default function LoginPage() {
               Google
             </a>
           </div>
-        </div>
 
-        {/* Feature pills */}
-        <div className={styles.features}>
-          <div className={styles.featurePill}>
-            <span>🔒</span> Docker Sandboxed
-          </div>
-          <div className={styles.featurePill}>
-            <span>🧪</span> Deterministic Grading
-          </div>
-          <div className={styles.featurePill}>
-            <span>🤖</span> AI Mentor
-          </div>
-          <div className={styles.featurePill}>
-            <span>📊</span> ELO Rating
-          </div>
+          <p className={styles.fineprint}>
+            This is a practice sandbox — mock logins don&rsquo;t require a real
+            password and no credentials are stored beyond your chosen handle.
+          </p>
         </div>
-      </div>
+      </section>
     </main>
   );
 }
