@@ -39,6 +39,16 @@ public class SandboxService {
     @Value("${incidentx.sandbox.mode:docker}")
     private String sandboxMode;
 
+    // In "docker" mode, submitted code resolves require('express') etc. against the image's
+    // own /workspace/node_modules (baked in at image build time). In "node" mode there is no
+    // such image — submissions run straight out of a bare temp directory — so without this,
+    // any incident whose solution.js requires a dependency (e.g. the express-based memory-leak
+    // incident) fails EVERY submission, correct or not, with the same "Cannot find module"
+    // error. We lazily npm-install the sandbox's package.json once into baseTempDir itself;
+    // Node's module resolution walks up from each submission's subdirectory and finds it there.
+    private volatile boolean nodeModulesReady = false;
+    private static final int NODE_MODULES_INSTALL_TIMEOUT_SECONDS = 120;
+
     @Data
     @AllArgsConstructor
     @NoArgsConstructor
@@ -84,6 +94,8 @@ public class SandboxService {
 
     private SandboxResult runWithNode(Path submissionTempPath) throws IOException {
         try {
+            ensureNodeModulesForNodeMode();
+
             Path runnerScript = submissionTempPath.resolve("runner.js");
             try (var in = getClass().getResourceAsStream("/sandbox/runner.js")) {
                 if (in == null) {
@@ -126,6 +138,62 @@ public class SandboxService {
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return new SandboxResult("ERROR", "{\"error\": \"Internal execution error: " + e.getMessage() + "\"}", "", "");
+        }
+    }
+
+    private void ensureNodeModulesForNodeMode() throws IOException, InterruptedException {
+        if (nodeModulesReady) {
+            return;
+        }
+        synchronized (this) {
+            if (nodeModulesReady) {
+                return;
+            }
+
+            Path base = Paths.get(baseTempDir);
+            Files.createDirectories(base);
+
+            Path expressMarker = base.resolve("node_modules").resolve("express").resolve("package.json");
+            if (Files.exists(expressMarker)) {
+                nodeModulesReady = true;
+                return;
+            }
+
+            log.info("Node sandbox mode: installing shared sandbox dependencies into {}", base);
+            try (var in = getClass().getResourceAsStream("/sandbox/package.json")) {
+                if (in == null) {
+                    throw new IOException("Bundled sandbox/package.json resource not found on classpath");
+                }
+                Files.copy(in, base.resolve("package.json"), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+
+            boolean isWindows = System.getProperty("os.name", "").toLowerCase().contains("win");
+            List<String> command = List.of(
+                    isWindows ? "npm.cmd" : "npm",
+                    "install", "--omit=dev", "--no-audit", "--no-fund"
+            );
+            ProcessBuilder pb = new ProcessBuilder(command);
+            pb.directory(base.toFile());
+            pb.redirectErrorStream(true);
+            Process process = pb.start();
+
+            String output;
+            try (var out = process.getInputStream()) {
+                output = new String(out.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            boolean finished = process.waitFor(NODE_MODULES_INSTALL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                log.error("Timed out installing sandbox node_modules into {}", base);
+                return;
+            }
+
+            if (process.exitValue() == 0 && Files.exists(expressMarker)) {
+                nodeModulesReady = true;
+                log.info("Sandbox dependencies installed successfully into {}", base);
+            } else {
+                log.error("Failed to install sandbox node_modules (exit {}). npm output:\n{}", process.exitValue(), output);
+            }
         }
     }
 

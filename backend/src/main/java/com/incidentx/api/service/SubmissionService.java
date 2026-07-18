@@ -97,6 +97,13 @@ public class SubmissionService {
     }
 
     private void updatePlayerProfile(Long userId, String incidentId, String status) {
+        // ERROR means the sandbox itself failed to execute the submission (bad test harness,
+        // missing dependency, crashed runner) — not a real attempt at solving the incident, so
+        // it shouldn't count against the player's attempts/pass-rate stats.
+        if ("ERROR".equalsIgnoreCase(status)) {
+            return;
+        }
+
         Optional<PlayerProfile> profileOpt = playerProfileRepository.findByUserId(userId);
         if (profileOpt.isEmpty()) {
             log.warn("Player profile not found for user: {}", userId);

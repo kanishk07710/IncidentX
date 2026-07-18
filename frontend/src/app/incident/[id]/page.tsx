@@ -158,6 +158,16 @@ export default function IncidentWorkspace({
     }
   }
 
+  function parseSandboxError(): string | null {
+    if (!result?.results) return null;
+    try {
+      const parsed = JSON.parse(result.results);
+      return parsed.error || null;
+    } catch {
+      return null;
+    }
+  }
+
   if (loading) {
     return (
       <main className={styles.main}>
@@ -184,6 +194,7 @@ export default function IncidentWorkspace({
 
   const metrics = parseMetrics();
   const tests = parseTestResults();
+  const sandboxError = parseSandboxError();
   const maxMem = Math.max(...metrics.map((m) => m.memory), 1);
 
   return (
@@ -398,6 +409,8 @@ export default function IncidentWorkspace({
                       ? styles.statusPassed
                       : result.status === "TIMEOUT"
                       ? styles.statusTimeout
+                      : result.status === "ERROR"
+                      ? styles.statusError
                       : styles.statusFailed
                   }`}
                 >
@@ -405,9 +418,25 @@ export default function IncidentWorkspace({
                     ? "✅ ALL TESTS PASSED"
                     : result.status === "TIMEOUT"
                     ? "⏱️ EXECUTION TIMED OUT"
+                    : result.status === "ERROR"
+                    ? "⚠️ SANDBOX ERROR — NOT A WRONG-ANSWER VERDICT"
                     : "❌ TESTS FAILED"}
                 </div>
               </div>
+
+              {/* Sandbox/infra error — distinct from a wrong-answer verdict */}
+              {result.status === "ERROR" && (
+                <div className={styles.sandboxErrorBox}>
+                  <p>
+                    Your code wasn&rsquo;t graded — the sandbox failed to run it. This
+                    is a system-side issue, not feedback on your fix. Try submitting
+                    again.
+                  </p>
+                  {sandboxError && (
+                    <pre className={styles.sandboxErrorDetail}>{sandboxError}</pre>
+                  )}
+                </div>
+              )}
 
               {/* Individual test results */}
               {tests.length > 0 && (
