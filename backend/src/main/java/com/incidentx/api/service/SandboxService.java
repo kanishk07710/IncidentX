@@ -5,8 +5,6 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import java.io.File;
 import java.io.IOException;
@@ -65,25 +63,6 @@ public class SandboxService {
         private String resultsJson; // Parsed results from runner.js JSON or error details
         private String stdout;
         private String stderr;
-    }
-
-    // Belt-and-suspenders on top of the image-baked node_modules link: if that link ever fails
-    // (e.g. filesystem doesn't support symlinks), start the npm-install fallback as soon as the
-    // app is up rather than waiting for a user's first submission to pay for it.
-    @EventListener(ApplicationReadyEvent.class)
-    public void warmUpNodeSandboxOnStartup() {
-        if (!"node".equalsIgnoreCase(sandboxMode)) {
-            return;
-        }
-        Thread warmup = new Thread(() -> {
-            try {
-                ensureNodeModulesForNodeMode();
-            } catch (Exception e) {
-                log.warn("Sandbox node_modules warm-up failed at startup; will retry lazily on first submission", e);
-            }
-        }, "sandbox-warmup");
-        warmup.setDaemon(true);
-        warmup.start();
     }
 
     public SandboxResult runSubmission(String submissionId, Map<String, String> files, String hiddenTests) {
