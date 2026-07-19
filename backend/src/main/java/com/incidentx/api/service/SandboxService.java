@@ -31,13 +31,20 @@ public class SandboxService {
     @Value("${incidentx.sandbox.timeout-seconds:8}")
     private int timeoutSeconds;
 
-    // "docker" (default, used for local dev with docker-compose) or "node" — Render's standard
-    // web service has no Docker daemon available to it, so on Render set SANDBOX_MODE=node to
-    // run the same runner.js directly via the Node binary baked into the API's own Docker image
-    // instead of shelling out to `docker run`. Isolation is weaker in "node" mode (process-level
-    // limits only, no container), which is an acceptable tradeoff for this project's threat model.
-    @Value("${incidentx.sandbox.mode:docker}")
+    // "docker" (local dev with a real daemon), "node" (hosts like Render's standard web service,
+    // which expose no Docker daemon — runner.js runs directly via the Node binary baked into the
+    // API's own image), or "auto" (default): probe once for a usable Docker CLI + sandbox image
+    // and fall back to node mode when either is missing. The auto default exists because a
+    // deployment that lands in docker mode without a daemon fails EVERY submission with
+    // "Cannot run program docker" — which is exactly what happened on Render when the service
+    // was created without the SANDBOX_MODE=node env var render.yaml declares. Isolation is
+    // weaker in node mode (process-level limits only, no container), an acceptable tradeoff
+    // for this project's threat model.
+    @Value("${incidentx.sandbox.mode:auto}")
     private String sandboxMode;
+
+    // Resolved lazily on first submission when mode is "auto"; explicit modes bypass this.
+    private volatile String resolvedAutoMode;
 
     // In "docker" mode, submitted code resolves require('express') etc. against the image's
     // own /workspace/node_modules (baked in at image build time). In "node" mode there is no
@@ -85,7 +92,7 @@ public class SandboxService {
             // Write hidden test suite to tests.js
             Files.writeString(submissionTempPath.resolve("tests.js"), hiddenTests, StandardCharsets.UTF_8);
 
-            if ("node".equalsIgnoreCase(sandboxMode)) {
+            if ("node".equals(effectiveSandboxMode())) {
                 return runWithNode(submissionTempPath);
             }
             return runWithDocker(submissionId, submissionTempPath);
@@ -95,6 +102,49 @@ public class SandboxService {
             return new SandboxResult("ERROR", "{\"error\": \"Internal execution error: " + e.getMessage() + "\"}", "", "");
         } finally {
             deleteDirectory(submissionTempPath.toFile());
+        }
+    }
+
+    private String effectiveSandboxMode() {
+        String configured = sandboxMode == null ? "" : sandboxMode.trim().toLowerCase();
+        if ("node".equals(configured) || "docker".equals(configured)) {
+            return configured;
+        }
+        String resolved = resolvedAutoMode;
+        if (resolved != null) {
+            return resolved;
+        }
+        synchronized (this) {
+            if (resolvedAutoMode == null) {
+                resolvedAutoMode = isDockerSandboxUsable() ? "docker" : "node";
+                log.info("Sandbox mode '{}' auto-resolved to '{}'", sandboxMode, resolvedAutoMode);
+            }
+            return resolvedAutoMode;
+        }
+    }
+
+    private boolean isDockerSandboxUsable() {
+        try {
+            Process probe = new ProcessBuilder("docker", "image", "inspect", dockerImageName)
+                    .redirectErrorStream(true)
+                    .start();
+            if (!probe.waitFor(10, TimeUnit.SECONDS)) {
+                probe.destroyForcibly();
+                log.warn("Docker probe timed out; falling back to node sandbox mode");
+                return false;
+            }
+            if (probe.exitValue() != 0) {
+                log.warn("Docker CLI is present but sandbox image '{}' is not available; " +
+                        "falling back to node sandbox mode", dockerImageName);
+                return false;
+            }
+            return true;
+        } catch (IOException e) {
+            log.info("Docker CLI not available ({}); using node sandbox mode", e.getMessage());
+            return false;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
         }
     }
 
