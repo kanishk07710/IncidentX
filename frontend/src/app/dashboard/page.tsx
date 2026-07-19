@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiFetchWithRetry } from "@/lib/api";
 import { CATEGORY_ORDER, CATEGORY_META, tierFor } from "@/lib/categories";
 import styles from "./dashboard.module.css";
 
@@ -44,6 +44,7 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [wakingUp, setWakingUp] = useState(false);
   const [search, setSearch] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
   const router = useRouter();
@@ -63,11 +64,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
+      const onRetry = () => setWakingUp(true);
       try {
         const [incRes, profRes, userRes] = await Promise.all([
-          apiFetch("/api/incidents"),
-          apiFetch("/api/profiles/me"),
-          apiFetch("/api/auth/me"),
+          apiFetchWithRetry("/api/incidents", {}, onRetry),
+          apiFetchWithRetry("/api/profiles/me", {}, onRetry),
+          apiFetchWithRetry("/api/auth/me", {}, onRetry),
         ]);
 
         if (incRes.status === 401 || profRes.status === 401 || userRes.status === 401) {
@@ -79,8 +81,10 @@ export default function DashboardPage() {
         if (profRes.ok) setProfile(await profRes.json());
         if (userRes.ok) setUser(await userRes.json());
       } catch {
-        // ignore network errors
+        // Backend never came up within the retry window — leave the dashboard to render
+        // with whatever it has rather than spinning forever.
       } finally {
+        setWakingUp(false);
         setLoading(false);
       }
     }
@@ -146,7 +150,11 @@ export default function DashboardPage() {
     return (
       <main className={styles.loadingContainer}>
         <div className="spinner" />
-        <p>Loading systems overview...</p>
+        <p>
+          {wakingUp
+            ? "Waking up the server — this can take up to a minute after a period of inactivity…"
+            : "Loading systems overview..."}
+        </p>
       </main>
     );
   }

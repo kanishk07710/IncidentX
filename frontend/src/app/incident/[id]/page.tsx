@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useState, use } from "react";
 import { useRouter } from "next/navigation";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, apiFetchWithRetry } from "@/lib/api";
 import styles from "./workspace.module.css";
 
 interface IncidentDetail {
@@ -44,6 +44,7 @@ export default function IncidentWorkspace({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmissionResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [wakingUp, setWakingUp] = useState(false);
   const [hint, setHint] = useState<HintResponse | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
@@ -52,7 +53,7 @@ export default function IncidentWorkspace({
   useEffect(() => {
     async function load() {
       try {
-        const res = await apiFetch(`/api/incidents/${id}`);
+        const res = await apiFetchWithRetry(`/api/incidents/${id}`, {}, () => setWakingUp(true));
         if (res.status === 401) {
           router.push("/");
           return;
@@ -73,8 +74,9 @@ export default function IncidentWorkspace({
           }
         }
       } catch {
-        // ignore
+        // Backend never came up within the retry window.
       } finally {
+        setWakingUp(false);
         setLoading(false);
       }
     }
@@ -173,7 +175,11 @@ export default function IncidentWorkspace({
       <main className={styles.main}>
         <div className={styles.loadingContainer}>
           <div className="spinner" />
-          <p>Loading incident...</p>
+          <p>
+            {wakingUp
+              ? "Waking up the server — this can take up to a minute after a period of inactivity…"
+              : "Loading incident..."}
+          </p>
         </div>
       </main>
     );
