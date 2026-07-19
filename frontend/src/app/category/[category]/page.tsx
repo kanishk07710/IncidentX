@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
+import { apiFetchWithRetry } from "@/lib/api";
 import { categoryMeta, tierFor } from "@/lib/categories";
 import styles from "./category.module.css";
 
@@ -27,14 +27,16 @@ export default function CategoryPage({
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [wakingUp, setWakingUp] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
     async function load() {
+      const onRetry = () => setWakingUp(true);
       try {
         const [incRes, profRes] = await Promise.all([
-          apiFetch("/api/incidents"),
-          apiFetch("/api/profiles/me"),
+          apiFetchWithRetry("/api/incidents", {}, onRetry),
+          apiFetchWithRetry("/api/profiles/me", {}, onRetry),
         ]);
 
         if (incRes.status === 401 || profRes.status === 401) {
@@ -45,8 +47,9 @@ export default function CategoryPage({
         if (incRes.ok) setIncidents(await incRes.json());
         if (profRes.ok) setProfile(await profRes.json());
       } catch {
-        // ignore network errors
+        // Backend never came up within the retry window.
       } finally {
+        setWakingUp(false);
         setLoading(false);
       }
     }
@@ -82,7 +85,11 @@ export default function CategoryPage({
     return (
       <main className={styles.loadingContainer}>
         <div className="spinner" />
-        <p>Loading category...</p>
+        <p>
+          {wakingUp
+            ? "Waking up the server — this can take up to a minute after a period of inactivity…"
+            : "Loading category..."}
+        </p>
       </main>
     );
   }
