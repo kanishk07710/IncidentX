@@ -45,6 +45,7 @@ public class SecurityConfig {
             )
             .oauth2Login(oauth2 -> oauth2
                 .defaultSuccessUrl(frontendUrl + "/dashboard", true)
+                .failureUrl(frontendUrl + "/login?error=true")
             )
             // Every protected route here is a JSON /api/** endpoint (the actual pages live on the
             // Next.js origin), so an unauthenticated request should get a plain 401, not Spring's
