@@ -1,7 +1,8 @@
 "use client";
-import { useEffect, useState, use } from "react";
+import { useEffect, useRef, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, apiFetchWithRetry } from "@/lib/api";
+import { subscribeToSubmission } from "@/lib/ws";
 import styles from "./workspace.module.css";
 
 interface IncidentDetail {
@@ -49,6 +50,13 @@ export default function IncidentWorkspace({
   const [hintLoading, setHintLoading] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
   const router = useRouter();
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    return () => {
+      unsubscribeRef.current?.();
+    };
+  }, []);
 
   useEffect(() => {
     async function load() {
@@ -84,6 +92,7 @@ export default function IncidentWorkspace({
   }, [id, router]);
 
   async function handleSubmit() {
+    unsubscribeRef.current?.();
     setSubmitting(true);
     setResult(null);
 
@@ -97,8 +106,19 @@ export default function IncidentWorkspace({
       });
 
       if (res.ok) {
+        // The backend grades in the background and returns this submission as PENDING right
+        // away; the live PASSED/FAILED/TIMEOUT/ERROR result arrives over WebSocket instead of
+        // a second poll.
         const data: SubmissionResult = await res.json();
         setResult(data);
+        unsubscribeRef.current = subscribeToSubmission(data.id, (update) => {
+          setResult(update);
+          if (update.status !== "PENDING") {
+            setSubmitting(false);
+            unsubscribeRef.current?.();
+            unsubscribeRef.current = null;
+          }
+        });
       } else {
         setResult({
           id: 0,
@@ -106,6 +126,7 @@ export default function IncidentWorkspace({
           results: '{"error": "Submission failed. Check authentication."}',
           aiFeedback: "Could not process submission.",
         });
+        setSubmitting(false);
       }
     } catch {
       setResult({
@@ -114,7 +135,6 @@ export default function IncidentWorkspace({
         results: '{"error": "Network error"}',
         aiFeedback: "Could not connect to server.",
       });
-    } finally {
       setSubmitting(false);
     }
   }
@@ -417,6 +437,8 @@ export default function IncidentWorkspace({
                       ? styles.statusTimeout
                       : result.status === "ERROR"
                       ? styles.statusError
+                      : result.status === "PENDING"
+                      ? styles.statusPending
                       : styles.statusFailed
                   }`}
                 >
@@ -426,6 +448,8 @@ export default function IncidentWorkspace({
                     ? "⏱️ EXECUTION TIMED OUT"
                     : result.status === "ERROR"
                     ? "⚠️ SANDBOX ERROR — NOT A WRONG-ANSWER VERDICT"
+                    : result.status === "PENDING"
+                    ? "🧪 GRADING IN SANDBOX…"
                     : "❌ TESTS FAILED"}
                 </div>
               </div>
