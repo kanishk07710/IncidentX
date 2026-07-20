@@ -312,6 +312,11 @@
   color: var(--accent-purple);
   border: 1px solid rgba(139, 92, 246, 0.3);
 }
+.statusPending {
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--accent-cyan);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
 
 .sandboxErrorBox {
   display: flex;

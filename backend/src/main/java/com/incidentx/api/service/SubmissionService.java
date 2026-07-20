@@ -11,6 +11,8 @@ import com.incidentx.api.repository.PlayerProfileRepository;
 import com.incidentx.api.repository.SubmissionRepository;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.io.IOException;
@@ -39,14 +41,20 @@ public class SubmissionService {
     @Autowired
     private ObjectMapper objectMapper;
 
-    @Transactional
-    public Submission createAndRunSubmission(User user, String incidentId, String submittedCodeJson) {
-        log.info("Creating submission for user: {} on incident: {}", user.getUsername(), incidentId);
-        
-        Incident incident = incidentRepository.findById(incidentId)
-                .orElseThrow(() -> new IllegalArgumentException("Incident not found: " + incidentId));
+    @Autowired
+    private SimpMessagingTemplate messagingTemplate;
 
-        // Save submission as PENDING
+    // Saves the submission as PENDING and returns immediately; the actual grading (sandbox run +
+    // AI feedback, which can take several seconds) happens on a background thread via
+    // runGradingAsync so the HTTP request doesn't block on it.
+    @Transactional
+    public Submission createPendingSubmission(User user, String incidentId, String submittedCodeJson) {
+        log.info("Creating submission for user: {} on incident: {}", user.getUsername(), incidentId);
+
+        if (!incidentRepository.existsById(incidentId)) {
+            throw new IllegalArgumentException("Incident not found: " + incidentId);
+        }
+
         Submission submission = Submission.builder()
                 .user(user)
                 .incidentId(incidentId)
@@ -54,46 +62,70 @@ public class SubmissionService {
                 .status("PENDING")
                 .createdAt(Instant.now())
                 .build();
-        submission = submissionRepository.save(submission);
+        return submissionRepository.save(submission);
+    }
+
+    // Runs the sandbox + AI mentor grading for an already-created PENDING submission, then
+    // publishes the finished Submission to /topic/submissions/{id} so a connected client updates
+    // live instead of polling. Runs on its own thread pool (see AsyncConfig) so a slow/queued
+    // sandbox run never ties up an HTTP request thread.
+    @Async("sandboxGradingExecutor")
+    @Transactional
+    public void runGradingAsync(Long submissionId) {
+        Submission submission = submissionRepository.findById(submissionId).orElse(null);
+        if (submission == null) {
+            log.warn("Submission {} disappeared before grading could run", submissionId);
+            return;
+        }
+
+        String incidentId = submission.getIncidentId();
+        Incident incident = incidentRepository.findById(incidentId).orElse(null);
+        if (incident == null) {
+            submission.setStatus("ERROR");
+            submission.setResults("{\"error\": \"Incident not found.\"}");
+            publishUpdate(submissionRepository.save(submission));
+            return;
+        }
 
         // Parse code files
         Map<String, String> filesMap;
         try {
-            filesMap = objectMapper.readValue(submittedCodeJson, new TypeReference<Map<String, String>>() {});
+            filesMap = objectMapper.readValue(submission.getSubmittedCode(), new TypeReference<Map<String, String>>() {});
         } catch (IOException e) {
             log.error("Failed to parse submitted code JSON", e);
             submission.setStatus("ERROR");
             submission.setResults("{\"error\": \"Failed to parse submitted code structure.\"}");
-            return submissionRepository.save(submission);
+            publishUpdate(submissionRepository.save(submission));
+            return;
         }
 
-        // Execute inside Docker sandbox
+        // Execute inside the sandbox
         SandboxService.SandboxResult sandboxResult = sandboxService.runSubmission(
                 submission.getId().toString(),
                 filesMap,
                 incident.getHiddenTests()
         );
 
-        // Update submission fields
         submission.setStatus(sandboxResult.getStatus());
         submission.setResults(sandboxResult.getResultsJson());
 
-        // Generate AI Mentor feedback
         String aiFeedback = aiMentorService.generateFeedback(
                 incidentId,
-                submittedCodeJson,
+                submission.getSubmittedCode(),
                 sandboxResult.getStatus(),
                 sandboxResult.getResultsJson()
         );
         submission.setAiFeedback(aiFeedback);
 
-        // Save execution details
         submission = submissionRepository.save(submission);
 
-        // Update Player Profile Stats
-        updatePlayerProfile(user.getId(), incidentId, sandboxResult.getStatus());
+        updatePlayerProfile(submission.getUser().getId(), incidentId, sandboxResult.getStatus());
 
-        return submission;
+        publishUpdate(submission);
+    }
+
+    private void publishUpdate(Submission submission) {
+        messagingTemplate.convertAndSend("/topic/submissions/" + submission.getId(), submission);
     }
 
     private void updatePlayerProfile(Long userId, String incidentId, String status) {

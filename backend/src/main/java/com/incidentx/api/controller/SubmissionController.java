@@ -46,12 +46,15 @@ public class SubmissionController {
             return ResponseEntity.badRequest().build();
         }
 
-        Submission submission = submissionService.createAndRunSubmission(
+        Submission submission = submissionService.createPendingSubmission(
                 user,
                 request.getIncidentId(),
                 request.getSubmittedCode()
         );
+        submissionService.runGradingAsync(submission.getId());
 
+        // Returned immediately as PENDING; the client subscribes to /topic/submissions/{id}
+        // over WebSocket to receive the graded result once runGradingAsync finishes.
         return ResponseEntity.ok(submission);
     }
 
