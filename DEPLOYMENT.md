@@ -14,7 +14,11 @@ work on Render, `SandboxService` now supports a `SANDBOX_MODE=node` fallback: in
 spawning `docker run`, it runs the same `runner.js` directly with the Node binary that's baked
 into the API's own Docker image (see `backend/Dockerfile`). Isolation is weaker than the
 Docker path (process-level limits only, no container) — acceptable for a project like this, but
-worth knowing. `render.yaml` in the repo root sets `SANDBOX_MODE=node` automatically. If you'd
+worth knowing. `render.yaml` in the repo root sets `SANDBOX_MODE=node` automatically — but note
+this only applies to Blueprint-created services; a manually created web service ignores
+`render.yaml`, so set the env var yourself (or rely on the default `SANDBOX_MODE=auto`, which
+probes for a usable Docker CLI + sandbox image on the first submission and falls back to node
+mode when either is missing). If you'd
 rather keep full container isolation, deploy `backend` to a host that gives you a real
 Docker daemon (Fly.io Machines or a VPS) and leave `SANDBOX_MODE` unset/`docker`.
 
