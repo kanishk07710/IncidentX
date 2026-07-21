@@ -27,34 +27,57 @@ export default function CategoryPage({
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [wakingUp, setWakingUp] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
+      setLoading(true);
+      setLoadError(false);
       const onRetry = () => setWakingUp(true);
       try {
         const [incRes, profRes] = await Promise.all([
           apiFetchWithRetry("/api/incidents", {}, onRetry),
           apiFetchWithRetry("/api/profiles/me", {}, onRetry),
         ]);
+        if (cancelled) return;
 
         if (incRes.status === 401 || profRes.status === 401) {
           router.push("/");
           return;
         }
 
-        if (incRes.ok) setIncidents(await incRes.json());
-        if (profRes.ok) setProfile(await profRes.json());
+        // All-or-nothing: a lone failed request used to be swallowed silently, which is exactly
+        // what showed "0 incidents" for a real category during a brief post-deploy backend blip
+        // instead of retrying or surfacing the failure.
+        if (!incRes.ok || !profRes.ok) {
+          setLoadError(true);
+          return;
+        }
+
+        const [incidentsData, profileData] = await Promise.all([incRes.json(), profRes.json()]);
+        if (cancelled) return;
+
+        setIncidents(incidentsData);
+        setProfile(profileData);
       } catch {
-        // Backend never came up within the retry window.
+        if (!cancelled) setLoadError(true);
       } finally {
-        setWakingUp(false);
-        setLoading(false);
+        if (!cancelled) {
+          setWakingUp(false);
+          setLoading(false);
+        }
       }
     }
     load();
-  }, [router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, reloadKey]);
 
   const mastery: Record<string, number> = useMemo(() => {
     try {
@@ -90,6 +113,17 @@ export default function CategoryPage({
             ? "Waking up the server — this can take up to a minute after a period of inactivity…"
             : "Loading category..."}
         </p>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className={styles.loadingContainer}>
+        <p>Couldn&rsquo;t load this category.</p>
+        <button className="btn btn-primary" onClick={() => setReloadKey((k) => k + 1)}>
+          Try Again
+        </button>
       </main>
     );
   }
