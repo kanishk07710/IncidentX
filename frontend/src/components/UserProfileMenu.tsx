@@ -63,7 +63,10 @@ export default function UserProfileMenu({
   user,
   onLogout,
 }: {
-  user: CurrentUser | null;
+  // Non-null by contract: the caller must resolve the authenticated user before rendering this
+  // menu at all (e.g. behind a loading gate) rather than passing null and letting a fabricated
+  // placeholder name stand in for a real one.
+  user: CurrentUser;
   onLogout: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -86,10 +89,10 @@ export default function UserProfileMenu({
     };
   }, []);
 
-  const username = user?.username || "Operator";
-  const displayName = user?.name || username;
-  const provider = providerMeta(user?.authProvider);
-  const joinDate = formatJoinDate(user?.createdAt);
+  const username = user.username;
+  const displayName = user.name || username;
+  const provider = providerMeta(user.authProvider);
+  const joinDate = formatJoinDate(user.createdAt);
 
   return (
     <div className={styles.container} ref={containerRef}>
@@ -100,7 +103,7 @@ export default function UserProfileMenu({
         aria-haspopup="true"
         aria-expanded={open}
       >
-        {user?.avatarUrl ? (
+        {user.avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={user.avatarUrl} alt="" className={styles.avatarImg} />
         ) : (
@@ -116,7 +119,7 @@ export default function UserProfileMenu({
       {open && (
         <div className={styles.dropdown} role="menu">
           <div className={styles.dropdownHeader}>
-            {user?.avatarUrl ? (
+            {user.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={user.avatarUrl} alt="" className={styles.avatarImgLg} />
             ) : (
@@ -134,9 +137,9 @@ export default function UserProfileMenu({
             <span className={styles.checkBadge}>✓</span>
           </div>
 
-          {(user?.email || joinDate) && (
+          {(user.email || joinDate) && (
             <div className={styles.detailsList}>
-              {user?.email && (
+              {user.email && (
                 <div className={styles.detailRow}>
                   <span className={styles.detailLabel}>Email</span>
                   <span className={styles.detailValue}>{user.email}</span>

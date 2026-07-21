@@ -2,6 +2,7 @@ package com.incidentx.api.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.incidentx.api.dto.SubmissionUpdateMessage;
 import com.incidentx.api.model.Incident;
 import com.incidentx.api.model.PlayerProfile;
 import com.incidentx.api.model.Submission;
@@ -124,8 +125,18 @@ public class SubmissionService {
         publishUpdate(submission);
     }
 
+    // Sends a plain DTO rather than the Submission entity itself — the entity's lazy `user`
+    // association is a Hibernate proxy, and the STOMP message converter's ObjectMapper (unlike
+    // the main REST one) has no Hibernate module registered to unwrap it, so serializing the
+    // entity directly throws MessageConversionException on every single call. That exception
+    // gets swallowed by the async executor's uncaught-exception handler, so the failure was
+    // silent — grading finished and the DB was updated correctly, but the push never went out,
+    // leaving the frontend waiting on a WebSocket message that would never arrive.
     private void publishUpdate(Submission submission) {
-        messagingTemplate.convertAndSend("/topic/submissions/" + submission.getId(), submission);
+        messagingTemplate.convertAndSend(
+                "/topic/submissions/" + submission.getId(),
+                SubmissionUpdateMessage.from(submission)
+        );
     }
 
     private void updatePlayerProfile(Long userId, String incidentId, String status) {

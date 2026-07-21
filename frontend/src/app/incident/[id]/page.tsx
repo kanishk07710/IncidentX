@@ -51,10 +51,25 @@ export default function IncidentWorkspace({
   const [hintError, setHintError] = useState<string | null>(null);
   const router = useRouter();
   const unsubscribeRef = useRef<(() => void) | null>(null);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const giveUpTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function stopWatchingSubmission() {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    if (giveUpTimeoutRef.current) {
+      clearTimeout(giveUpTimeoutRef.current);
+      giveUpTimeoutRef.current = null;
+    }
+  }
 
   useEffect(() => {
     return () => {
-      unsubscribeRef.current?.();
+      stopWatchingSubmission();
     };
   }, []);
 
@@ -92,7 +107,7 @@ export default function IncidentWorkspace({
   }, [id, router]);
 
   async function handleSubmit() {
-    unsubscribeRef.current?.();
+    stopWatchingSubmission();
     setSubmitting(true);
     setResult(null);
 
@@ -106,19 +121,43 @@ export default function IncidentWorkspace({
       });
 
       if (res.ok) {
-        // The backend grades in the background and returns this submission as PENDING right
-        // away; the live PASSED/FAILED/TIMEOUT/ERROR result arrives over WebSocket instead of
-        // a second poll.
+        // The backend grades in the background and can finish before the WebSocket below even
+        // finishes connecting, in which case the push is missed (no message replay for late
+        // subscribers) — so a poll of GET /api/submissions/:id runs alongside it as a fallback,
+        // and a hard timeout guarantees this never spins forever if both somehow stall.
         const data: SubmissionResult = await res.json();
         setResult(data);
-        unsubscribeRef.current = subscribeToSubmission(data.id, (update) => {
+
+        function settle(update: SubmissionResult) {
           setResult(update);
-          if (update.status !== "PENDING") {
-            setSubmitting(false);
-            unsubscribeRef.current?.();
-            unsubscribeRef.current = null;
-          }
+          setSubmitting(false);
+          stopWatchingSubmission();
+        }
+
+        unsubscribeRef.current = subscribeToSubmission(data.id, (update) => {
+          if (update.status !== "PENDING") settle(update);
         });
+
+        pollIntervalRef.current = setInterval(async () => {
+          try {
+            const pollRes = await apiFetch(`/api/submissions/${data.id}`);
+            if (pollRes.ok) {
+              const polled: SubmissionResult = await pollRes.json();
+              if (polled.status !== "PENDING") settle(polled);
+            }
+          } catch {
+            // network hiccup — next tick retries
+          }
+        }, 3000);
+
+        giveUpTimeoutRef.current = setTimeout(() => {
+          settle({
+            id: data.id,
+            status: "ERROR",
+            results: '{"error": "Grading is taking longer than expected. Please refresh and check the submission history, or try again."}',
+            aiFeedback: "",
+          });
+        }, 60000);
       } else {
         setResult({
           id: 0,

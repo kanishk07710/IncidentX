@@ -5,10 +5,13 @@ import com.incidentx.api.model.User;
 import com.incidentx.api.repository.PlayerProfileRepository;
 import com.incidentx.api.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.util.Optional;
@@ -21,6 +24,14 @@ public class UserService {
 
     @Autowired
     private PlayerProfileRepository playerProfileRepository;
+
+    // Self-injected proxy so createOAuthUser()'s own @Transactional actually opens a *new*
+    // transaction when called from resolveUser() below — a plain `this.createOAuthUser(...)`
+    // call bypasses Spring's transactional proxy entirely (self-invocation doesn't go through
+    // the AOP advice), which would leave the retry running in the same (already-failed) tx.
+    @Autowired
+    @Lazy
+    private UserService self;
 
     @Transactional
     public User getOrCreateMockUser(String username) {
@@ -108,36 +119,61 @@ public class UserService {
                 return userRepository.save(user);
             }
 
-            User user = User.builder()
-                    .username(username)
-                    .name(displayName)
-                    .email(email)
-                    .provider(provider)
-                    .providerId(providerId)
-                    .avatarUrl(oauthUser.getAttribute("avatar_url") != null ? oauthUser.getAttribute("avatar_url") : oauthUser.getAttribute("picture"))
-                    .createdAt(Instant.now())
-                    .build();
-            User saved = userRepository.save(user);
+            String avatarUrl = oauthUser.getAttribute("avatar_url") != null
+                    ? oauthUser.getAttribute("avatar_url")
+                    : oauthUser.getAttribute("picture");
+            final String finalEmail = email;
 
-            // Initialize Player Profile
-            PlayerProfile profile = PlayerProfile.builder()
-                    .user(saved)
-                    .rating(1500.0)
-                    .ratingDeviation(350.0)
-                    .volatility(0.06)
-                    .attemptsCount(0)
-                    .solvedCount(0)
-                    .usedHintsCount(0)
-                    .solvedIncidentsJson("[]")
-                    .categoryMasteryJson("{}")
-                    .build();
-            playerProfileRepository.save(profile);
-
-            return saved;
+            try {
+                return self.createOAuthUser(username, displayName, email, provider, providerId, avatarUrl);
+            } catch (DataIntegrityViolationException e) {
+                // Lost a race to create this user: the dashboard fires /api/auth/me and
+                // /api/profiles/me in parallel, and both independently call resolveUser(), so on
+                // a brand-new login they can both reach here at once. One insert wins and commits
+                // first; the other hits the unique constraint on username/email. Rather than
+                // failing this request, look up the row the winner just created.
+                return userRepository.findByProviderAndProviderId(provider, providerId)
+                        .or(() -> userRepository.findByEmail(finalEmail))
+                        .orElseThrow(() -> e);
+            }
         } else {
             // Mock Login (LOCAL) - username is principal's name
             String username = authentication.getName();
             return userRepository.findByUsername(username).orElse(null);
         }
+    }
+
+    // REQUIRES_NEW so a unique-constraint violation here is contained to its own transaction —
+    // if it ran in the caller's existing transaction, Hibernate marks that transaction/session
+    // unusable for further operations once a flush fails, which would break the fallback lookup
+    // resolveUser() does in its catch block above.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public User createOAuthUser(String username, String displayName, String email, String provider,
+                                 String providerId, String avatarUrl) {
+        User user = User.builder()
+                .username(username)
+                .name(displayName)
+                .email(email)
+                .provider(provider)
+                .providerId(providerId)
+                .avatarUrl(avatarUrl)
+                .createdAt(Instant.now())
+                .build();
+        User saved = userRepository.save(user);
+
+        PlayerProfile profile = PlayerProfile.builder()
+                .user(saved)
+                .rating(1500.0)
+                .ratingDeviation(350.0)
+                .volatility(0.06)
+                .attemptsCount(0)
+                .solvedCount(0)
+                .usedHintsCount(0)
+                .solvedIncidentsJson("[]")
+                .categoryMasteryJson("{}")
+                .build();
+        playerProfileRepository.save(profile);
+
+        return saved;
     }
 }

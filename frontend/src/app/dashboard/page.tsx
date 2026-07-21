@@ -42,9 +42,11 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [wakingUp, setWakingUp] = useState(false);
   const [search, setSearch] = useState("");
   const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [reloadKey, setReloadKey] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
@@ -61,33 +63,60 @@ export default function DashboardPage() {
   }
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
+      setLoading(true);
+      setLoadError(false);
       const onRetry = () => setWakingUp(true);
+
       try {
         const [incRes, profRes, userRes] = await Promise.all([
           apiFetchWithRetry("/api/incidents", {}, onRetry),
           apiFetchWithRetry("/api/profiles/me", {}, onRetry),
           apiFetchWithRetry("/api/auth/me", {}, onRetry),
         ]);
+        if (cancelled) return;
 
         if (incRes.status === 401 || profRes.status === 401 || userRes.status === 401) {
           router.push("/");
           return;
         }
 
-        if (incRes.ok) setIncidents(await incRes.json());
-        if (profRes.ok) setProfile(await profRes.json());
-        if (userRes.ok) setUser(await userRes.json());
+        // All three or none — a lone failure here used to be swallowed silently (only the
+        // successful pieces got applied), which is exactly what let the dashboard render with
+        // a stale/default user, profile, or incident count instead of failing loudly. Treat any
+        // non-2xx as a load failure and surface a retry instead of rendering partial state.
+        if (!incRes.ok || !profRes.ok || !userRes.ok) {
+          setLoadError(true);
+          return;
+        }
+
+        const [incidentsData, profileData, userData] = await Promise.all([
+          incRes.json(),
+          profRes.json(),
+          userRes.json(),
+        ]);
+        if (cancelled) return;
+
+        setIncidents(incidentsData);
+        setProfile(profileData);
+        setUser(userData);
       } catch {
-        // Backend never came up within the retry window — leave the dashboard to render
-        // with whatever it has rather than spinning forever.
+        if (!cancelled) setLoadError(true);
       } finally {
-        setWakingUp(false);
-        setLoading(false);
+        if (!cancelled) {
+          setWakingUp(false);
+          setLoading(false);
+        }
       }
     }
+
     load();
-  }, [router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [router, reloadKey]);
 
   async function handleLogout() {
     await apiFetch("/api/auth/logout", { method: "POST" });
@@ -153,6 +182,21 @@ export default function DashboardPage() {
             ? "Waking up the server — this can take up to a minute after a period of inactivity…"
             : "Loading systems overview..."}
         </p>
+      </main>
+    );
+  }
+
+  if (loadError || !user || !profile) {
+    // The !user / !profile check is a type-narrowing safety net, not expected to trigger in
+    // practice: `load()` above only clears `loading` after incidents, profile, and user have
+    // all been set together, so this should be unreachable — but it means a null user can never
+    // silently fall through to a fabricated "Operator" placeholder further down.
+    return (
+      <main className={styles.loadingContainer}>
+        <p>Couldn&rsquo;t load your dashboard.</p>
+        <button className="btn btn-primary" onClick={() => setReloadKey((k) => k + 1)}>
+          Try Again
+        </button>
       </main>
     );
   }

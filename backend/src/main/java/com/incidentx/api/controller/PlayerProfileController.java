@@ -5,6 +5,7 @@ import com.incidentx.api.model.User;
 import com.incidentx.api.repository.PlayerProfileRepository;
 import com.incidentx.api.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
@@ -20,16 +21,18 @@ public class PlayerProfileController {
     @Autowired
     private UserService userService;
 
+    // no-store: per-user progress data, must never be served stale from a cache — see
+    // AuthController#getCurrentUser for why.
     @GetMapping("/me")
     public ResponseEntity<PlayerProfile> getMyProfile(Authentication authentication) {
         User user = userService.resolveUser(authentication);
         if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).cacheControl(CacheControl.noStore()).build();
         }
 
         return playerProfileRepository.findByUserId(user.getId())
-                .map(ResponseEntity::ok)
-                .orElse(ResponseEntity.notFound().build());
+                .map(p -> ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(p))
+                .orElse(ResponseEntity.notFound().cacheControl(CacheControl.noStore()).build());
     }
 
     @GetMapping("/{username}")
