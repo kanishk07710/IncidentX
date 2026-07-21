@@ -1,5 +1,6 @@
 package com.incidentx.api.controller;
 
+import com.incidentx.api.dto.CurrentUserResponse;
 import com.incidentx.api.model.User;
 import com.incidentx.api.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -23,12 +24,12 @@ public class AuthController {
     private UserService userService;
 
     @GetMapping("/me")
-    public ResponseEntity<User> getCurrentUser(Authentication authentication) {
+    public ResponseEntity<CurrentUserResponse> getCurrentUser(Authentication authentication) {
         User user = userService.resolveUser(authentication);
         if (user == null) {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
-        return ResponseEntity.ok(user);
+        return ResponseEntity.ok(CurrentUserResponse.from(user));
     }
 
     @PostMapping("/mock-login")

@@ -208,55 +208,6 @@
   transform: scale(0.98);
 }
 
-.profileRow {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 999px;
-  background: var(--k-surface-hi);
-  border: 1px solid var(--k-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 14px;
-  flex-shrink: 0;
-}
-.profileName {
-  font-size: 13px;
-  font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.profileTag {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  color: var(--k-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.8px;
-}
-.logoutBtn {
-  margin-left: auto;
-  background: none;
-  border: none;
-  color: var(--k-text-muted);
-  cursor: pointer;
-  font-size: 15px;
-  padding: 6px;
-  border-radius: var(--k-radius-sm);
-  flex-shrink: 0;
-}
-.logoutBtn:hover {
-  color: var(--k-accent-red);
-  background: var(--k-surface-alt);
-}
-
 /* ============ Top bar ============ */
 .topbar {
   position: sticky;
