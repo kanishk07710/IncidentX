@@ -45,7 +45,9 @@ export default function IncidentWorkspace({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<SubmissionResult | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [wakingUp, setWakingUp] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [hint, setHint] = useState<HintResponse | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
   const [hintError, setHintError] = useState<string | null>(null);
@@ -74,37 +76,60 @@ export default function IncidentWorkspace({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
+      setLoading(true);
+      setLoadError(false);
       try {
         const res = await apiFetchWithRetry(`/api/incidents/${id}`, {}, () => setWakingUp(true));
+        if (cancelled) return;
+
         if (res.status === 401) {
           router.push("/");
           return;
         }
-        if (res.ok) {
-          const data: IncidentDetail = await res.json();
-          setIncident(data);
 
-          // Parse base code files
-          try {
-            const files = JSON.parse(data.baseCode);
-            setCode(files);
-            const firstFile = Object.keys(files)[0];
-            if (firstFile) setActiveFile(firstFile);
-          } catch {
-            setCode({ "solution.js": "// Could not load starter code" });
-            setActiveFile("solution.js");
-          }
+        // A transient failure (e.g. a brief post-deploy backend blip) used to be swallowed
+        // silently and render as "Incident not found" — indistinguishable from the incident
+        // genuinely not existing. Only a real 404 means "not found"; anything else is a
+        // retryable load failure.
+        if (res.status === 404) {
+          return;
+        }
+        if (!res.ok) {
+          setLoadError(true);
+          return;
+        }
+
+        const data: IncidentDetail = await res.json();
+        if (cancelled) return;
+        setIncident(data);
+
+        // Parse base code files
+        try {
+          const files = JSON.parse(data.baseCode);
+          setCode(files);
+          const firstFile = Object.keys(files)[0];
+          if (firstFile) setActiveFile(firstFile);
+        } catch {
+          setCode({ "solution.js": "// Could not load starter code" });
+          setActiveFile("solution.js");
         }
       } catch {
-        // Backend never came up within the retry window.
+        if (!cancelled) setLoadError(true);
       } finally {
-        setWakingUp(false);
-        setLoading(false);
+        if (!cancelled) {
+          setWakingUp(false);
+          setLoading(false);
+        }
       }
     }
     load();
-  }, [id, router]);
+    return () => {
+      cancelled = true;
+    };
+  }, [id, router, reloadKey]);
 
   async function handleSubmit() {
     stopWatchingSubmission();
@@ -239,6 +264,19 @@ export default function IncidentWorkspace({
               ? "Waking up the server — this can take up to a minute after a period of inactivity…"
               : "Loading incident..."}
           </p>
+        </div>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className={styles.main}>
+        <div className={styles.loadingContainer}>
+          <p>Couldn&rsquo;t load this incident.</p>
+          <button className="btn btn-primary" onClick={() => setReloadKey((k) => k + 1)}>
+            Try Again
+          </button>
         </div>
       </main>
     );
