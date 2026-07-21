@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetch, apiFetchWithRetry } from "@/lib/api";
 import { CATEGORY_ORDER, CATEGORY_META, tierFor } from "@/lib/categories";
+import type { CurrentUser } from "@/lib/types";
+import UserProfileMenu from "@/components/UserProfileMenu";
 import styles from "./dashboard.module.css";
 
 interface Incident {
@@ -19,10 +21,6 @@ interface UserProfile {
   solvedCount: number;
   categoryMasteryJson: string;
   solvedIncidentsJson: string;
-}
-
-interface CurrentUser {
-  username: string;
 }
 
 const THEME_KEY = "incidentx_dashboard_theme";
@@ -159,8 +157,6 @@ export default function DashboardPage() {
     );
   }
 
-  const username = user?.username || "Operator";
-
   return (
     <div className={styles.shell} data-theme={theme}>
       {/* Sidebar */}
@@ -208,16 +204,7 @@ export default function DashboardPage() {
             </div>
           ) : null}
 
-          <div className={styles.profileRow}>
-            <div className={styles.avatar}>{username.charAt(0)}</div>
-            <div>
-              <div className={styles.profileName}>{username}</div>
-              <div className={styles.profileTag}>Practice Mode</div>
-            </div>
-            <button className={styles.logoutBtn} onClick={handleLogout} title="Log out">
-              ⏻
-            </button>
-          </div>
+          <UserProfileMenu user={user} onLogout={handleLogout} />
         </div>
       </aside>
 

@@ -32,6 +32,7 @@ public class UserService {
 
         User user = User.builder()
                 .username(username)
+                .name(username)
                 .email(email)
                 .provider("LOCAL")
                 .providerId(username)
@@ -68,7 +69,7 @@ public class UserService {
             String provider = oauthToken.getAuthorizedClientRegistrationId().toUpperCase();
             String providerId = oauthUser.getName();
             
-            // Extract email and username
+            // Extract email, username and display name
             String email = oauthUser.getAttribute("email");
             String username = oauthUser.getAttribute("login"); // github username
             if (username == null) {
@@ -80,10 +81,19 @@ public class UserService {
             if (email == null) {
                 email = username.toLowerCase() + "@incidentx.oauth";
             }
+            String displayName = oauthUser.getAttribute("name");
+            if (displayName == null) {
+                displayName = username;
+            }
 
             Optional<User> existing = userRepository.findByProviderAndProviderId(provider, providerId);
             if (existing.isPresent()) {
-                return existing.get();
+                User user = existing.get();
+                if (user.getName() == null) {
+                    user.setName(displayName);
+                    userRepository.save(user);
+                }
+                return user;
             }
 
             // Also check email just in case
@@ -92,11 +102,15 @@ public class UserService {
                 User user = byEmail.get();
                 user.setProvider(provider);
                 user.setProviderId(providerId);
+                if (user.getName() == null) {
+                    user.setName(displayName);
+                }
                 return userRepository.save(user);
             }
 
             User user = User.builder()
                     .username(username)
+                    .name(displayName)
                     .email(email)
                     .provider(provider)
                     .providerId(providerId)
