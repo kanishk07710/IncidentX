@@ -6,6 +6,7 @@ import com.incidentx.api.service.UserService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpSession;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -23,13 +24,16 @@ public class AuthController {
     @Autowired
     private UserService userService;
 
+    // Explicit no-store: this reflects the live session's identity, so it must never be served
+    // from a cache (browser bfcache/back-forward navigation, an intermediary proxy, etc.) —
+    // a cached response here is indistinguishable from "showing the wrong logged-in user."
     @GetMapping("/me")
     public ResponseEntity<CurrentUserResponse> getCurrentUser(Authentication authentication) {
         User user = userService.resolveUser(authentication);
         if (user == null) {
-            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).cacheControl(CacheControl.noStore()).build();
         }
-        return ResponseEntity.ok(CurrentUserResponse.from(user));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(CurrentUserResponse.from(user));
     }
 
     @PostMapping("/mock-login")

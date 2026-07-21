@@ -2,7 +2,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { apiFetch } from "@/lib/api";
+import { apiFetchWithRetry } from "@/lib/api";
 import type { CurrentUser } from "@/lib/types";
 import styles from "./profile.module.css";
 
@@ -22,29 +22,67 @@ export default function ProfilePage() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const router = useRouter();
 
   useEffect(() => {
+    let cancelled = false;
+
     async function load() {
+      setLoading(true);
+      setLoadError(false);
       try {
         const [userRes, profRes] = await Promise.all([
-          apiFetch("/api/auth/me"),
-          apiFetch("/api/profiles/me"),
+          apiFetchWithRetry("/api/auth/me"),
+          apiFetchWithRetry("/api/profiles/me"),
         ]);
+        if (cancelled) return;
+
         if (userRes.status === 401) {
           router.push("/");
           return;
         }
-        if (userRes.ok) setUser(await userRes.json());
-        if (profRes.ok) setProfile(await profRes.json());
+
+        // All-or-nothing: a lone failed request used to be swallowed silently, leaving stale
+        // null state rendered as if it were final instead of retried or surfaced as an error.
+        if (!userRes.ok || !profRes.ok) {
+          setLoadError(true);
+          return;
+        }
+
+        const [userData, profileData] = await Promise.all([userRes.json(), profRes.json()]);
+        if (cancelled) return;
+
+        setUser(userData);
+        setProfile(profileData);
+      } catch {
+        if (!cancelled) setLoadError(true);
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
-    load();
-  }, [router]);
 
-  if (loading) {
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [router, reloadKey]);
+
+  if (loadError) {
+    return (
+      <main className={styles.loadingContainer}>
+        <p>Couldn&rsquo;t load your profile.</p>
+        <button className="btn btn-primary" onClick={() => setReloadKey((k) => k + 1)}>
+          Try Again
+        </button>
+      </main>
+    );
+  }
+
+  if (loading || !user) {
+    // The `!user` half is a type-narrowing safety net, not expected in practice: load() above
+    // only clears `loading` after both the user and profile requests have succeeded together.
     return (
       <main className={styles.loadingContainer}>
         <div className="spinner" />
@@ -53,11 +91,9 @@ export default function ProfilePage() {
     );
   }
 
-  const displayName = user?.name || user?.username || "Operator";
-  const providerLabel = user?.authProvider
-    ? PROVIDER_LABEL[user.authProvider.toUpperCase()] || user.authProvider
-    : "Unknown";
-  const joinDate = user?.createdAt
+  const displayName = user.name || user.username;
+  const providerLabel = PROVIDER_LABEL[user.authProvider.toUpperCase()] || user.authProvider;
+  const joinDate = user.createdAt
     ? new Date(user.createdAt).toLocaleDateString(undefined, {
         year: "numeric",
         month: "long",
@@ -75,7 +111,7 @@ export default function ProfilePage() {
 
       <div className={`glass-card ${styles.card}`}>
         <div className={styles.header}>
-          {user?.avatarUrl ? (
+          {user.avatarUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={user.avatarUrl} alt="" className={styles.avatar} />
           ) : (
@@ -83,7 +119,7 @@ export default function ProfilePage() {
           )}
           <div>
             <h1 className={styles.name}>{displayName}</h1>
-            <p className={styles.username}>@{user?.username}</p>
+            <p className={styles.username}>@{user.username}</p>
           </div>
         </div>
 
@@ -93,7 +129,7 @@ export default function ProfilePage() {
         </div>
 
         <div className={styles.detailsGrid}>
-          {user?.email && (
+          {user.email && (
             <div className={styles.detailItem}>
               <span className={styles.detailLabel}>Email</span>
               <span className={styles.detailValue}>{user.email}</span>
@@ -105,7 +141,7 @@ export default function ProfilePage() {
               <span className={styles.detailValue}>{joinDate}</span>
             </div>
           )}
-          {user?.githubId && (
+          {user.githubId && (
             <div className={styles.detailItem}>
               <span className={styles.detailLabel}>GitHub ID</span>
               <span className={styles.detailValue}>{user.githubId}</span>

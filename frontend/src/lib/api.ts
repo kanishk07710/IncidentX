@@ -12,13 +12,17 @@ export async function apiFetch(path: string, options: RequestInit = {}) {
   return res;
 }
 
-// Free-tier hosts (e.g. Render) spin the backend down after inactivity and take 30-60s to wake
-// on the next request, so the very first fetch after a lull throws a plain network error rather
-// than returning a real response. Without a retry, page loads silently render with no data and
-// the user has to manually refresh a few times until the backend has finished waking up. This
-// only retries network-level failures (the fetch throwing) — HTTP error statuses like 401 are
-// real answers from an awake server and are returned as-is for the caller to handle. Only use
-// this for idempotent GETs on initial page load, never for POSTs like submissions or logout.
+// Render's edge proxy can return a 502/503/504 for a request that arrives while the origin is
+// still cold-starting — the TCP/TLS handshake succeeds so fetch() resolves normally (it does not
+// throw), it just carries a gateway-error status. A retry loop that only reacts to fetch()
+// throwing treats that response as final, so one of several parallel requests silently "loses"
+// while its siblings succeed a few hundred ms later once the origin is warm — which is exactly
+// what produced the dashboard's inconsistent user/progress state (see dashboard/page.tsx). Retry
+// on both: the fetch throwing (DNS/connection failure) and these specific gateway statuses. Real
+// answers from an awake server (200, 401, 404, ...) are returned as-is for the caller to handle.
+// Only use this for idempotent GETs on initial page load, never for POSTs like submissions or logout.
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+
 export async function apiFetchWithRetry(
   path: string,
   options: RequestInit = {},
@@ -29,14 +33,16 @@ export async function apiFetchWithRetry(
   let lastError: unknown;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      return await apiFetch(path, options);
+      const res = await apiFetch(path, options);
+      if (!RETRYABLE_STATUSES.has(res.status) || attempt === maxAttempts) {
+        return res;
+      }
     } catch (err) {
       lastError = err;
-      if (attempt < maxAttempts) {
-        onRetry?.(attempt, maxAttempts);
-        await new Promise((resolve) => setTimeout(resolve, delayMs));
-      }
+      if (attempt === maxAttempts) throw lastError;
     }
+    onRetry?.(attempt, maxAttempts);
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
   }
   throw lastError;
 }
