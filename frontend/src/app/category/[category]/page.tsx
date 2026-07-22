@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetchWithRetry } from "@/lib/api";
 import { categoryMeta, tierFor } from "@/lib/categories";
+import LoadingScreen from "@/components/LoadingScreen";
 import styles from "./category.module.css";
 
 interface Incident {
@@ -18,6 +19,8 @@ interface UserProfile {
   solvedIncidentsJson: string;
 }
 
+const THEME_KEY = "incidentx_dashboard_theme";
+
 export default function CategoryPage({
   params,
 }: {
@@ -30,7 +33,16 @@ export default function CategoryPage({
   const [loadError, setLoadError] = useState(false);
   const [wakingUp, setWakingUp] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const router = useRouter();
+
+  useEffect(() => {
+    function init() {
+      const saved = window.localStorage.getItem(THEME_KEY);
+      if (saved === "dark" || saved === "light") setTheme(saved);
+    }
+    init();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,21 +117,12 @@ export default function CategoryPage({
   const tier = tierFor(val);
 
   if (loading) {
-    return (
-      <main className={styles.loadingContainer}>
-        <div className="spinner" />
-        <p>
-          {wakingUp
-            ? "Waking up the server — this can take up to a minute after a period of inactivity…"
-            : "Loading category..."}
-        </p>
-      </main>
-    );
+    return <LoadingScreen title="Loading category…" waking={wakingUp} theme={theme} />;
   }
 
   if (loadError) {
     return (
-      <main className={styles.loadingContainer}>
+      <main className={styles.loadingContainer} data-theme={theme}>
         <p>Couldn&rsquo;t load this category.</p>
         <button className="btn btn-primary" onClick={() => setReloadKey((k) => k + 1)}>
           Try Again
@@ -129,7 +132,7 @@ export default function CategoryPage({
   }
 
   return (
-    <div className={styles.shell}>
+    <div className={styles.shell} data-theme={theme}>
       <header className={styles.topbar}>
         <div className={styles.topbarInner}>
           <Link href="/dashboard" className={styles.backLink}>

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, use } from "react";
 import { useRouter } from "next/navigation";
 import { apiFetch, apiFetchWithRetry } from "@/lib/api";
 import { subscribeToSubmission } from "@/lib/ws";
+import LoadingScreen from "@/components/LoadingScreen";
 import styles from "./workspace.module.css";
 
 interface IncidentDetail {
@@ -255,18 +256,7 @@ export default function IncidentWorkspace({
   }
 
   if (loading) {
-    return (
-      <main className={styles.main}>
-        <div className={styles.loadingContainer}>
-          <div className="spinner" />
-          <p>
-            {wakingUp
-              ? "Waking up the server — this can take up to a minute after a period of inactivity…"
-              : "Loading incident..."}
-          </p>
-        </div>
-      </main>
-    );
+    return <LoadingScreen title="Loading incident…" waking={wakingUp} theme="dark" />;
   }
 
   if (loadError) {

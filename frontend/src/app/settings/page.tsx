@@ -1,10 +1,23 @@
 "use client";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import styles from "./settings.module.css";
 
+const THEME_KEY = "incidentx_dashboard_theme";
+
 export default function SettingsPage() {
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+
+  useEffect(() => {
+    function init() {
+      const saved = window.localStorage.getItem(THEME_KEY);
+      if (saved === "dark" || saved === "light") setTheme(saved);
+    }
+    init();
+  }, []);
+
   return (
-    <main className={styles.shell}>
+    <main className={styles.shell} data-theme={theme}>
       <div className={styles.topRow}>
         <Link href="/dashboard" className={styles.backLink}>
           ← Back to Dashboard

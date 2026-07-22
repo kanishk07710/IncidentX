@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetchWithRetry } from "@/lib/api";
 import type { CurrentUser } from "@/lib/types";
+import LoadingScreen from "@/components/LoadingScreen";
 import styles from "./profile.module.css";
 
 interface PlayerProfile {
@@ -18,13 +19,25 @@ const PROVIDER_LABEL: Record<string, string> = {
   LOCAL: "Local Account",
 };
 
+const THEME_KEY = "incidentx_dashboard_theme";
+
 export default function ProfilePage() {
   const [user, setUser] = useState<CurrentUser | null>(null);
   const [profile, setProfile] = useState<PlayerProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+  const [wakingUp, setWakingUp] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
   const router = useRouter();
+
+  useEffect(() => {
+    function init() {
+      const saved = window.localStorage.getItem(THEME_KEY);
+      if (saved === "dark" || saved === "light") setTheme(saved);
+    }
+    init();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,10 +45,11 @@ export default function ProfilePage() {
     async function load() {
       setLoading(true);
       setLoadError(false);
+      const onRetry = () => setWakingUp(true);
       try {
         const [userRes, profRes] = await Promise.all([
-          apiFetchWithRetry("/api/auth/me"),
-          apiFetchWithRetry("/api/profiles/me"),
+          apiFetchWithRetry("/api/auth/me", {}, onRetry),
+          apiFetchWithRetry("/api/profiles/me", {}, onRetry),
         ]);
         if (cancelled) return;
 
@@ -59,7 +73,10 @@ export default function ProfilePage() {
       } catch {
         if (!cancelled) setLoadError(true);
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setWakingUp(false);
+          setLoading(false);
+        }
       }
     }
 
@@ -71,7 +88,7 @@ export default function ProfilePage() {
 
   if (loadError) {
     return (
-      <main className={styles.loadingContainer}>
+      <main className={styles.loadingContainer} data-theme={theme}>
         <p>Couldn&rsquo;t load your profile.</p>
         <button className="btn btn-primary" onClick={() => setReloadKey((k) => k + 1)}>
           Try Again
@@ -83,12 +100,7 @@ export default function ProfilePage() {
   if (loading || !user) {
     // The `!user` half is a type-narrowing safety net, not expected in practice: load() above
     // only clears `loading` after both the user and profile requests have succeeded together.
-    return (
-      <main className={styles.loadingContainer}>
-        <div className="spinner" />
-        <p>Loading profile…</p>
-      </main>
-    );
+    return <LoadingScreen title="Loading profile…" waking={wakingUp} theme={theme} />;
   }
 
   const displayName = user.name || user.username;
@@ -102,7 +114,7 @@ export default function ProfilePage() {
     : null;
 
   return (
-    <main className={styles.shell}>
+    <main className={styles.shell} data-theme={theme}>
       <div className={styles.topRow}>
         <Link href="/dashboard" className={styles.backLink}>
           ← Back to Dashboard

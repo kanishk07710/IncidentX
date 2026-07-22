@@ -6,6 +6,7 @@ import { apiFetch, apiFetchWithRetry } from "@/lib/api";
 import { CATEGORY_ORDER, CATEGORY_META, tierFor } from "@/lib/categories";
 import type { CurrentUser } from "@/lib/types";
 import UserProfileMenu from "@/components/UserProfileMenu";
+import LoadingScreen from "@/components/LoadingScreen";
 import styles from "./dashboard.module.css";
 
 interface Incident {
@@ -174,16 +175,7 @@ export default function DashboardPage() {
       : null;
 
   if (loading) {
-    return (
-      <main className={styles.loadingContainer}>
-        <div className="spinner" />
-        <p>
-          {wakingUp
-            ? "Waking up the server — this can take up to a minute after a period of inactivity…"
-            : "Loading systems overview..."}
-        </p>
-      </main>
-    );
+    return <LoadingScreen title="Loading systems overview…" waking={wakingUp} theme={theme} />;
   }
 
   if (loadError || !user || !profile) {
