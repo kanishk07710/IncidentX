@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { apiFetchWithRetry } from "@/lib/api";
 import { categoryMeta, tierFor } from "@/lib/categories";
+import LoadingScreen from "@/components/LoadingScreen";
 import styles from "./category.module.css";
 
 interface Incident {
@@ -116,16 +117,7 @@ export default function CategoryPage({
   const tier = tierFor(val);
 
   if (loading) {
-    return (
-      <main className={styles.loadingContainer} data-theme={theme}>
-        <div className="spinner" />
-        <p>
-          {wakingUp
-            ? "Waking up the server — this can take up to a minute after a period of inactivity…"
-            : "Loading category..."}
-        </p>
-      </main>
-    );
+    return <LoadingScreen title="Loading category…" waking={wakingUp} theme={theme} />;
   }
 
   if (loadError) {

@@ -1,0 +1,163 @@
+.screen {
+  --ls-bg: #0a0e17;
+  --ls-text: #f1f5f9;
+  --ls-text-muted: #64748b;
+  --ls-accent: #06d6a0;
+  --ls-ring: rgba(6, 214, 160, 0.35);
+  --ls-track: rgba(148, 163, 184, 0.14);
+
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  background: var(--ls-bg);
+  color: var(--ls-text);
+  padding: 24px;
+  text-align: center;
+}
+
+.screen[data-theme="light"] {
+  --ls-bg: #f9f9f9;
+  --ls-text: #1b1b1b;
+  --ls-text-muted: #8a8380;
+  --ls-accent: #06b88a;
+  --ls-ring: rgba(6, 184, 138, 0.3);
+  --ls-track: rgba(27, 27, 27, 0.08);
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  color: var(--ls-text-muted);
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out 0.1s forwards;
+}
+
+.sonar {
+  position: relative;
+  width: 76px;
+  height: 76px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+.sonarRing {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1.5px solid var(--ls-ring);
+  animation: sonarPing 2.4s cubic-bezier(0.2, 0.6, 0.4, 1) infinite;
+}
+.sonarRing:nth-child(2) {
+  animation-delay: 0.8s;
+}
+.sonarRing:nth-child(3) {
+  animation-delay: 1.6s;
+}
+
+.sonarCore {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ls-accent);
+  box-shadow: 0 0 18px 2px var(--ls-ring);
+  animation: corePulse 2.4s ease-in-out infinite;
+}
+
+.textBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out 0.15s forwards;
+  max-width: 420px;
+}
+
+.title {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: -0.1px;
+}
+
+.subtitle {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ls-text-muted);
+}
+
+.progressTrack {
+  width: 200px;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--ls-track);
+  overflow: hidden;
+  opacity: 0;
+  animation: fadeIn 0.5s ease-out 0.2s forwards;
+}
+
+.progressFill {
+  width: 40%;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, transparent, var(--ls-accent), transparent);
+  animation: indeterminate 1.6s ease-in-out infinite;
+}
+
+@keyframes sonarPing {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.9;
+  }
+  100% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+}
+
+@keyframes corePulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-140%);
+  }
+  100% {
+    transform: translateX(360%);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sonarRing,
+  .sonarCore,
+  .progressFill {
+    animation: none;
+  }
+}
