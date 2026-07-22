@@ -1,9 +1,27 @@
 .shell {
+  --k-bg: #f9f9f9;
+  --k-surface: #ffffff;
+  --k-border: #dfdada;
+  --k-text: #1b1b1b;
+  --k-text-secondary: #57534f;
+  --k-accent: #06d6a0;
+
   min-height: 100vh;
   padding: 40px 24px 64px;
   display: flex;
   flex-direction: column;
   align-items: center;
+  background: var(--k-bg);
+  color: var(--k-text);
+}
+
+.shell[data-theme="dark"] {
+  --k-bg: #000000;
+  --k-surface: rgba(255, 255, 255, 0.045);
+  --k-border: rgba(255, 255, 255, 0.1);
+  --k-text: var(--text-primary);
+  --k-text-secondary: var(--text-secondary);
+  --k-accent: var(--accent-cyan);
 }
 
 .topRow {
@@ -14,10 +32,10 @@
 .backLink {
   font-size: 13px;
   font-weight: 600;
-  color: var(--text-secondary);
+  color: var(--k-text-secondary);
 }
 .backLink:hover {
-  color: var(--accent-cyan);
+  color: var(--k-accent);
 }
 
 .card {
@@ -29,6 +47,10 @@
   align-items: center;
   text-align: center;
   gap: 8px;
+  /* Overrides the shared global .glass-card look (always-dark) so this card follows the
+     page's own light/dark theme instead. */
+  background: var(--k-surface) !important;
+  border-color: var(--k-border) !important;
 }
 .icon {
   font-size: 32px;
@@ -40,6 +62,6 @@
 }
 .subtitle {
   font-size: 13px;
-  color: var(--text-secondary);
+  color: var(--k-text-secondary);
   max-width: 340px;
 }
